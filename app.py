@@ -14,7 +14,7 @@ def index():
     return '''
     <h1>Upload a PPT or PPTX file</h1>
     <form action="/upload" method="post" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".ppt,.pptx,.pdf" required>
+        <input type="file" name="file" accept=".ppt,.pptx,.pdf,.png,.jpg,.jpeg" required>
         <button type="submit">Upload</button>
     </form>
     '''
@@ -29,9 +29,9 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': 'No file selected for upload.'}), 400
     # Check file extension
-    allowed_ext = ('.ppt', '.pptx', '.pdf')
+    allowed_ext = ('.ppt', '.pptx', '.pdf', '.png', '.jpg', '.jpeg')
     if not (file and file.filename.lower().endswith(allowed_ext)):
-        return jsonify({'error': 'Invalid file type. Only PPT, PPTX, or PDF allowed.'}), 400
+        return jsonify({'error': 'Invalid file type. Only PPT, PPTX, PDF, PNG, JPG, or JPEG allowed.'}), 400
     # Check file size (limit to 20MB for example)
     file.seek(0, os.SEEK_END)
     file_length = file.tell()
@@ -57,10 +57,40 @@ def upload_file():
     )
     try:
         result = parser.parse(filepath)
-        markdown_documents = result.get_markdown_documents(split_by_page=True)
-        # Convert Document objects to plain markdown strings
-        markdown_strings = [doc.markdown if hasattr(doc, 'markdown') else str(doc) for doc in markdown_documents]
-        return jsonify({'message': 'File uploaded and parsed successfully', 'markdown_documents': markdown_strings}), 200
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext in ['.png', '.jpg', '.jpeg']:
+            # Get image documents and descriptions
+            image_documents = result.get_image_documents(
+                include_screenshot_images=True,
+                include_object_images=False,
+                image_download_dir="./images",
+            )
+            # Prepare image info (base64 and description)
+            images_info = []
+            for img_doc in image_documents:
+                # img_doc.image_bytes is the image in bytes
+                import base64
+                img_b64 = base64.b64encode(img_doc.image_bytes).decode('utf-8')
+                images_info.append({
+                    'image_base64': img_b64,
+                    'description': getattr(img_doc, 'description', ''),
+                })
+            # Also include page-level info if available
+            pages = []
+            for page in result.pages:
+                pages.append({
+                    'text': getattr(page, 'text', ''),
+                    'md': getattr(page, 'md', ''),
+                    'images': getattr(page, 'images', []),
+                    'layout': getattr(page, 'layout', {}),
+                    'structuredData': getattr(page, 'structuredData', {}),
+                })
+            return jsonify({'message': 'Image uploaded and parsed successfully', 'images': images_info, 'pages': pages}), 200
+        else:
+            markdown_documents = result.get_markdown_documents(split_by_page=True)
+            # Convert Document objects to plain markdown strings
+            markdown_strings = [doc.markdown if hasattr(doc, 'markdown') else str(doc) for doc in markdown_documents]
+            return jsonify({'message': 'File uploaded and parsed successfully', 'markdown_documents': markdown_strings}), 200
     except Exception as e:
         err_msg = str(e)
         tb = traceback.format_exc()

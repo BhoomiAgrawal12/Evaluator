@@ -1,0 +1,4 @@
+Flask
+flask-cors
+llama-cloud-services
+python-dotenv
