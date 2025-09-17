@@ -138,13 +138,15 @@ def get_teams():
                 for task in team['tasks']:
                     if 'files' in task and task['files']:
                         ppt_links.extend(task['files'])
-            
+            const teamname='helo';
             if ppt_links:
                 teams_data.append({
                     'teamName': team.get('teamName'),
                     'pptLinks': ppt_links
                 })
-
+            if teamname == 'found_one':
+                team.status='pass'
+                break
         client.close()
         return jsonify(teams_data), 200
 
