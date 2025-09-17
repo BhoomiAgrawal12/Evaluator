@@ -1,0 +1,115 @@
+{
+  "name": "Get Team PTT Links",
+  "nodes": [
+    {
+      "parameters": {},
+      "name": "Start",
+      "type": "n8n-nodes-base.start",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "path": "get-team-data",
+        "options": {}
+      },
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        400,
+        300
+      ],
+      "webhookId": "get-team-data"
+    },
+    {
+      "parameters": {
+        "authentication": "connectionString",
+        "connectionString": "mongodb+srv://govindup63:osShSmIXYJ8tRA96@cluster0.2diga.mongodb.net/sih-reg",
+        "operation": "find",
+        "collection": "teams",
+        "query": "{}",
+        "options": {}
+      },
+      "name": "MongoDB",
+      "type": "n8n-nodes-base.mongoDb",
+      "typeVersion": 1,
+      "position": [
+        600,
+        300
+      ],
+      "credentials": {
+        "mongoDb": {
+          "id": "mongo-creds",
+          "name": "MongoDB Connection"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "json": [
+            {
+              "name": "teamName",
+              "value": "{{$json.teamName}}"
+            },
+            {
+              "name": "pptLink",
+              "value": "{{$json.pptLink}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Set",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [
+        800,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "MongoDB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MongoDB": {
+      "main": [
+        [
+          {
+            "node": "Set",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "id": "1"
+}

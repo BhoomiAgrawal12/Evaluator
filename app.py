@@ -3,6 +3,8 @@ import os
 import traceback
 from llama_cloud_services import LlamaParse
 from dotenv import load_dotenv
+from pymongo import MongoClient
+import requests
 
 load_dotenv()
 app = Flask(__name__)
@@ -21,18 +23,14 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
-    # Check if file part is present
     if 'file' not in request.files:
         return jsonify({'error': 'No file part in the request.'}), 400
     file = request.files['file']
-    # Check if filename is empty
     if file.filename == '':
         return jsonify({'error': 'No file selected for upload.'}), 400
-    # Check file extension
     allowed_ext = ('.ppt', '.pptx', '.pdf', '.png', '.jpg', '.jpeg')
     if not (file and file.filename.lower().endswith(allowed_ext)):
         return jsonify({'error': 'Invalid file type. Only PPT, PPTX, PDF, PNG, JPG, or JPEG allowed.'}), 400
-    # Check file size (limit to 20MB for example)
     file.seek(0, os.SEEK_END)
     file_length = file.tell()
     file.seek(0)
@@ -45,7 +43,6 @@ def upload_file():
         file.save(filepath)
     except Exception as e:
         return jsonify({'error': 'Failed to save file.', 'details': str(e)}), 500
-    # Parse with LlamaParse
     api_key = os.environ.get("LLAMA_CLOUD_API_KEY")
     if not api_key:
         return jsonify({'error': 'LlamaParse API key not set in environment.'}), 500
@@ -59,21 +56,26 @@ def upload_file():
         result = parser.parse(filepath)
         ext = os.path.splitext(file.filename)[1].lower()
         if ext in ['.png', '.jpg', '.jpeg']:
-            # Get image documents and descriptions
+            import base64
             image_documents = result.get_image_documents(
                 include_screenshot_images=True,
                 include_object_images=False,
                 image_download_dir="./images",
             )
-            # Prepare image info (base64 and description)
             images_info = []
             for img_doc in image_documents:
-                # img_doc.image_bytes is the image in bytes
-                import base64
                 img_b64 = base64.b64encode(img_doc.image_bytes).decode('utf-8')
                 images_info.append({
                     'image_base64': img_b64,
                     'description': getattr(img_doc, 'description', ''),
+                })
+            if not images_info:
+                with open(filepath, 'rb') as f:
+                    img_bytes = f.read()
+                img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                images_info.append({
+                    'image_base64': img_b64,
+                    'description': 'Uploaded image (no description from parser)',
                 })
             # Also include page-level info if available
             pages = []
@@ -119,6 +121,74 @@ def upload_file():
                 'traceback': tb
             }), 401
         return jsonify({'error': 'LlamaParse Python client failed', 'py_error': err_msg, 'traceback': tb}), 500
+
+@app.route('/api/teams', methods=['GET'])
+def get_teams():
+    try:
+        # Connect to MongoDB
+        client = MongoClient("mongodb+srv://govindup63:osShSmIXYJ8tRA96@cluster0.2diga.mongodb.net/sih-reg")
+        db = client['sih-reg']
+        collection = db['teams']
+
+        # Fetch team name and ppt link from tasks
+        teams_data = []
+        for team in collection.find({}, { 'teamName': 1, 'tasks.files': 1, '_id': 0 }):
+            ppt_links = []
+            if 'tasks' in team:
+                for task in team['tasks']:
+                    if 'files' in task and task['files']:
+                        ppt_links.extend(task['files'])
+            
+            if ppt_links:
+                teams_data.append({
+                    'teamName': team.get('teamName'),
+                    'pptLinks': ppt_links
+                })
+
+        client.close()
+        return jsonify(teams_data), 200
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/trigger-n8n', methods=['POST'])
+def trigger_n8n():
+    try:
+        # Get the JSON data from the request
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No JSON data provided in the request.'}), 400
+
+        team_name = data.get('teamName')
+        ppt_links = data.get('pptLinks')
+
+        if not team_name or not ppt_links:
+            return jsonify({'error': 'Missing teamName or pptLinks in the JSON data.'}), 400
+
+        # n8n webhook URL
+        n8n_webhook_url = "YOUR_N8N_WEBHOOK_URL" # Replace with your actual n8n webhook URL
+
+        # Prepare the data to be sent to n8n
+        payload = {
+            'teamName': team_name,
+            'pptLinks': ppt_links
+        }
+
+        # Make the POST request to the n8n webhook
+        response = requests.post(n8n_webhook_url, json=payload)
+
+        # Check if the request was successful
+        if response.status_code == 200:
+            return jsonify({'message': 'Successfully triggered n8n workflow.'}), 200
+        else:
+            return jsonify({
+                'error': 'Failed to trigger n8n workflow.',
+                'n8n_response': response.text,
+                'status_code': response.status_code
+            }), 500
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
